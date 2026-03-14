@@ -1,0 +1,40 @@
+syntax = "proto3";
+option java_multiple_files = true;
+package ru.karpenko;
+
+message MatrixRow {
+    repeated int32 values = 1;
+}
+
+message TaskRequest {
+    int32 matrixSize = 1;
+    int32 pathLength = 2;
+    repeated MatrixRow adjacencyMatrix = 3;
+}
+
+message TaskResponse {
+    string taskId = 1;
+}
+
+message SubTaskRequest {
+    bytes subTaskData = 1;
+    bytes jarData = 2;
+}
+
+message SubTaskResponse {
+    bytes resultData = 1;
+}
+
+message ResultRequest {
+    string taskId = 1;
+}
+
+message ResultResponse {
+    bytes resultData = 1;
+}
+
+service GridService {
+    rpc addTask(TaskRequest) returns (TaskResponse);
+    rpc getNextSubTask(SubTaskRequest) returns (SubTaskResponse);
+    rpc getResult(ResultRequest) returns (ResultResponse);
+}
