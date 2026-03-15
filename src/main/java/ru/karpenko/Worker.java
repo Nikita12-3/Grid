@@ -55,21 +55,21 @@ public class Worker {
 
             // 2. Сохраняем исходные данные в кэш
             if (jsonBase != null && !jsonBase.isEmpty()) {
-                System.out.println("Получены исходные данные: " + jsonBase.length() + " символов");
-                System.out.println("Первые 100 символов: " + jsonBase.substring(0, Math.min(100, jsonBase.length())));
-
                 try {
-                    // Пробуем десериализовать как JSON
-                    Object baseData = objectMapper.readTree(jsonBase);
-                    System.out.println("Исходные данные успешно десериализованы как JSON");
-                    baseDataCache.put(taskId, baseData);
-                } catch (JsonProcessingException e) {
-                    System.err.println("Ошибка десериализации JSON: " + e.getMessage());
-                    // Пробуем как простой текст
+                    byte[] baseDataBytes = jsonBase.getBytes(StandardCharsets.ISO_8859_1);
+                    try (ByteArrayInputStream bis = new ByteArrayInputStream(baseDataBytes);
+                         ObjectInputStream ois = new ObjectInputStream(bis)) {
+                        Object baseData = ois.readObject();
+                        baseDataCache.put(taskId, baseData);
+                    }
+                } catch (Exception e) {
+                    System.err.println("Ошибка десериализации: " + e.getMessage());
                     baseDataCache.put(taskId, jsonBase);
-                    System.out.println("Исходные данные сохранены как текст");
                 }
-            } else {
+            }
+
+            else
+            {
                 System.out.println("Исходные данные не получены");
             }
 
@@ -151,17 +151,29 @@ public class Worker {
     }
 
     private Method findMethodWithMainAnnotation(URLClassLoader classLoader) throws Exception {
-        // Временное решение - возвращаем фиктивный метод
-        Method dummyMethod = Worker.class.getMethod("dummyMethod");
-        System.out.println("Используем фиктивный метод: " + dummyMethod.getName());
-        return dummyMethod;
+        // Получаем все классы из JAR
+        Enumeration<JarEntry> entries = new JarFile(JAR_PATH).entries();
+        while (entries.hasMoreElements()) {
+            JarEntry entry = entries.nextElement();
+            if (entry.getName().endsWith(".class")) {
+                String className = entry.getName()
+                        .replace("/", ".")
+                        .replace(".class", "");
+                try {
+                    Class<?> clazz = classLoader.loadClass(className);
+                    for (Method method : clazz.getDeclaredMethods()) {
+                        if (method.isAnnotationPresent(MainAnnotation.class)) {
+                            return method;
+                        }
+                    }
+                } catch (ClassNotFoundException e) {
+                    System.err.println("Не удалось загрузить класс: " + className);
+                }
+            }
+        }
+        throw new RuntimeException("Метод с аннотацией @MainAnnotation не найден");
     }
 
-    // Фиктивный метод для временного решения
-    public String dummyMethod(String input) {
-        System.out.println("Выполнение фиктивного метода с параметром: " + input);
-        return "Результат фиктивного метода: " + input;
-    }
 
     private Object invokeMainMethod(Method method, Object[] parameters) throws Exception {
         try {
@@ -169,12 +181,20 @@ public class Worker {
             for (int i = 0; i < parameters.length; i++) {
                 System.out.println("  Параметр " + i + ": " + parameters[i]);
             }
-            return method.invoke(this, parameters);
+            // Убедитесь, что параметры соответствуют ожидаемым типам
+            if (method.getParameterTypes()[0].isInstance(parameters[0])) {
+                return method.invoke(this, parameters);
+            } else {
+                // Если параметр не соответствует ожидаемому типу, пробуем десериализовать его
+                Object deserializedParam = objectMapper.readValue((String) parameters[0], method.getParameterTypes()[0]);
+                return method.invoke(this, new Object[]{deserializedParam});
+            }
         } catch (Exception e) {
             System.err.println("Ошибка при вызове метода: " + e.getMessage());
-            throw new RuntimeException("Ошибка выполнения метода: " + e.getCause().getMessage(), e);
+            throw e;
         }
     }
+
 
     private byte[] serializeResult(Object result) throws Exception {
         try {
