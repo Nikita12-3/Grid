@@ -9,8 +9,10 @@ import org.springframework.web.client.RestTemplate;
 import org.springframework.http.*;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
+import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -57,8 +59,8 @@ public class DistributorService extends DistributorServiceGrpc.DistributorServic
                     return "solver.jar";
                 }
             });
-            body.add("jsonBase", new String(baseData, "UTF-8"));
-            body.add("jsonSubTask", new String(subTaskData, "UTF-8"));
+            body.add("jsonBase", new String(baseData, StandardCharsets.ISO_8859_1));
+            body.add("jsonSubTask", new String(subTaskData, StandardCharsets.ISO_8859_1));
             body.add("managerAddress", "localhost:8082");
 
             // Создаем запрос
