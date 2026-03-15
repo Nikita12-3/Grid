@@ -66,24 +66,6 @@ public class Task implements Serializable {
         }
     }
 
-    public void addBatchResult(int startCombination, byte[] resultData) {
-        batchResults.add(new BatchResult(startCombination, resultData));
-    }
-
-    public byte[] aggregateResults() {
-        try {
-            // Здесь должна быть логика агрегации результатов
-            // Например, поиск самого дешевого пути
-            // Для простоты возвращаем первый полученный результат
-            if (!batchResults.isEmpty()) {
-                return batchResults.get(0).getResultData();
-            }
-            return null;
-        } catch (Exception e) {
-            throw new RuntimeException("Ошибка агрегации результатов", e);
-        }
-    }
-
     public byte[] getBaseData() {
         return baseData;
     }
