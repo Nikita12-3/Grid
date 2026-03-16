@@ -1,4 +1,4 @@
-package ru.karpenko;
+package ru.karpenko.model;
 
 import java.io.Serializable;
 

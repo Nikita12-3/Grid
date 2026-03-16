@@ -1,5 +1,7 @@
 package ru.karpenko;
 
+import ru.karpenko.model.SubTask;
+
 import java.util.ArrayList;
 import java.util.List;
 
