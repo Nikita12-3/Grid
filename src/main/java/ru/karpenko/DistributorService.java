@@ -13,6 +13,7 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -28,8 +29,12 @@ public class DistributorService extends DistributorServiceGrpc.DistributorServic
             byte[] baseData = request.getBaseData().toByteArray();
             byte[] subTaskData = request.getSubTaskData().toByteArray();
 
-            // Сохраняем данные задачи
-            taskData.put(taskId, jarData);
+            System.out.println("Полученные данные на распределителе:");
+            System.out.println("JAR данные (размер: " + jarData.length + " байт)");
+            System.out.println("Base данные (размер: " + baseData.length + " байт):");
+            System.out.println("Первые 100 байт base данных: " + Arrays.toString(Arrays.copyOf(baseData, Math.min(baseData.length, 100))));
+            System.out.println("Подзадача данные (размер: " + subTaskData.length + " байт):");
+            System.out.println("Первые 100 байт данных подзадачи: " + Arrays.toString(Arrays.copyOf(subTaskData, Math.min(subTaskData.length, 100))));
 
             // Отправляем подзадачу воркеру
             byte[] result = sendToWorker(taskId, jarData, baseData, subTaskData);
@@ -44,13 +49,12 @@ public class DistributorService extends DistributorServiceGrpc.DistributorServic
         }
     }
 
+
     private byte[] sendToWorker(String taskId, byte[] jarData, byte[] baseData, byte[] subTaskData) {
         try {
-            // Создаем правильный заголовок
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.MULTIPART_FORM_DATA);
 
-            // Создаем тело запроса
             MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
             body.add("taskId", taskId);
             body.add("jar", new ByteArrayResource(jarData) {
@@ -59,14 +63,21 @@ public class DistributorService extends DistributorServiceGrpc.DistributorServic
                     return "solver.jar";
                 }
             });
-            body.add("jsonBase", new String(baseData, StandardCharsets.ISO_8859_1));
-            body.add("jsonSubTask", new String(subTaskData, StandardCharsets.ISO_8859_1));
-            body.add("managerAddress", "localhost:8082");
+            body.add("baseData", new ByteArrayResource(baseData) {
+                @Override
+                public String getFilename() {
+                    return "baseData.bin";
+                }
+            });
+            body.add("subTaskData", new ByteArrayResource(subTaskData) {
+                @Override
+                public String getFilename() {
+                    return "subTaskData.bin";
+                }
+            });
 
-            // Создаем запрос
             HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
 
-            // Отправляем на воркера
             ResponseEntity<byte[]> response = restTemplate.exchange(
                     "http://localhost:8080/solveSubtask",
                     HttpMethod.POST,
@@ -81,6 +92,7 @@ public class DistributorService extends DistributorServiceGrpc.DistributorServic
             return new byte[0];
         }
     }
+
 
     @Override
     public void getResult(ResultRequest request, StreamObserver<ResultResponse> responseObserver) {
