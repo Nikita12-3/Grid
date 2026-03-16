@@ -6,6 +6,7 @@ import java.io.ObjectOutputStream;
 import java.io.ObjectInputStream;
 import java.io.Serializable;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 public class Task implements Serializable {
@@ -55,16 +56,15 @@ public class Task implements Serializable {
     public byte[] serializeSubTask(int start, int batchSize) {
         try (ByteArrayOutputStream bos = new ByteArrayOutputStream();
              ObjectOutputStream oos = new ObjectOutputStream(bos)) {
-            oos.writeObject(adjacencyMatrix);
-            oos.writeInt(matrixSize);
-            oos.writeInt(pathLength);
-            oos.writeInt(start);
-            oos.writeInt(batchSize);
+            // Сериализуем объект SubTask
+            SubTask subTask = new SubTask(adjacencyMatrix, start, batchSize, pathLength);
+            oos.writeObject(subTask);
             return bos.toByteArray();
         } catch (Exception e) {
             throw new RuntimeException("Ошибка сериализации подзадачи", e);
         }
     }
+
 
     public byte[] getBaseData() {
         return baseData;
