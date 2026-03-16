@@ -20,34 +20,44 @@ import java.util.Map;
 public class DistributorService extends DistributorServiceGrpc.DistributorServiceImplBase {
     private final Map<String, byte[]> taskData = new HashMap<>();
     private final RestTemplate restTemplate = new RestTemplate();
+    private final Map<String, byte[]> results = new HashMap<>();
 
     @Override
     public void addTask(DistributorTaskRequest request, StreamObserver<TaskResponse> responseObserver) {
         try {
             String taskId = request.getTaskId();
+            System.out.println("Получен запрос на обработку задачи: " + taskId);
+
             byte[] jarData = request.getJarData().toByteArray();
             byte[] baseData = request.getBaseData().toByteArray();
             byte[] subTaskData = request.getSubTaskData().toByteArray();
 
             System.out.println("Полученные данные на распределителе:");
             System.out.println("JAR данные (размер: " + jarData.length + " байт)");
-            System.out.println("Base данные (размер: " + baseData.length + " байт):");
-            System.out.println("Первые 100 байт base данных: " + Arrays.toString(Arrays.copyOf(baseData, Math.min(baseData.length, 100))));
-            System.out.println("Подзадача данные (размер: " + subTaskData.length + " байт):");
-            System.out.println("Первые 100 байт данных подзадачи: " + Arrays.toString(Arrays.copyOf(subTaskData, Math.min(subTaskData.length, 100))));
+            System.out.println("Base данные (размер: " + baseData.length + " байт)");
+            System.out.println("Подзадача данные (размер: " + subTaskData.length + " байт)");
 
             // Отправляем подзадачу воркеру
+            System.out.println("Отправка подзадачи на воркер...");
             byte[] result = sendToWorker(taskId, jarData, baseData, subTaskData);
+            System.out.println("Подзадача успешно отправлена на воркер");
+
+            // Сохраняем результат
+            results.put(taskId, result);
+            System.out.println("Результат для задачи " + taskId + " успешно сохранен на распределителе");
 
             // Возвращаем успешный ответ
+            System.out.println("Отправка ответа клиенту для задачи " + taskId);
             responseObserver.onNext(TaskResponse.newBuilder().setTaskId(taskId).build());
             responseObserver.onCompleted();
+            System.out.println("Ответ клиенту для задачи " + taskId + " успешно отправлен");
         } catch (Exception e) {
             System.err.println("Ошибка в addTask: " + e.getMessage());
             e.printStackTrace();
             responseObserver.onError(e);
         }
     }
+
 
 
     private byte[] sendToWorker(String taskId, byte[] jarData, byte[] baseData, byte[] subTaskData) {
@@ -98,21 +108,30 @@ public class DistributorService extends DistributorServiceGrpc.DistributorServic
     public void getResult(ResultRequest request, StreamObserver<ResultResponse> responseObserver) {
         try {
             String taskId = request.getTaskId();
-            byte[] resultData = taskData.get(taskId);
+            System.out.println("Получен запрос на результат для задачи: " + taskId);
+
+            byte[] resultData = results.get(taskId);
+            System.out.println("Результат для задачи " + taskId + ": " + (resultData != null ? "найден" : "не найден"));
 
             if (resultData == null) {
-                responseObserver.onError(new RuntimeException("Результат не найден для taskId: " + taskId));
+                System.err.println("Ошибка: результат не найден для задачи " + taskId);
+                responseObserver.onError(new RuntimeException("Результат не найден для задачи " + taskId));
                 return;
             }
 
+            System.out.println("Отправка результата для задачи " + taskId);
             responseObserver.onNext(ResultResponse.newBuilder()
                     .setResultData(ByteString.copyFrom(resultData))
                     .build());
             responseObserver.onCompleted();
+            System.out.println("Результат для задачи " + taskId + " успешно отправлен");
         } catch (Exception e) {
+            System.err.println("Ошибка при обработке запроса на результат: " + e.getMessage());
+            e.printStackTrace();
             responseObserver.onError(e);
         }
     }
+
 
     public static void main(String[] args) throws IOException, InterruptedException {
         Server server = ServerBuilder.forPort(8082)
