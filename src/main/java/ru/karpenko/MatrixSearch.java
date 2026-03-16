@@ -12,9 +12,14 @@ public class MatrixSearch {
     private List<Integer> minPath;
 
     @MainAnnotation
-    public List<Integer> findCheapestPath(SubTask subTask) {
-        this.adjacencyMatrix = subTask.getAdjacencyMatrix();
-        this.pathLength = subTask.getPathLength();
+    public List<Integer> findCheapestPath(
+            @Param("adjacencyMatrix") int[][] adjacencyMatrix,
+            @Param("pathLength") int pathLength,
+            @Param("startCombination") int startCombination,
+            @Param("combinationsCount") int combinationsCount) {
+
+        this.adjacencyMatrix = adjacencyMatrix;
+        this.pathLength = pathLength;
         this.minCost = Integer.MAX_VALUE;
         this.minPath = new ArrayList<>();
 
