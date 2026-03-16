@@ -38,7 +38,7 @@ public class MyGridService extends GridServiceGrpc.GridServiceImplBase {
             Task task = new Task(adjacencyMatrix, request.getMatrixSize(), request.getPathLength());
             tasks.put(taskId, task);
 
-            // Отправляем подзадачи на распределитель
+            // Отправляем подзадачи на распределитель и сохраняем результат
             sendTasksToDistributor(taskId, solverJarBytes, task.getBaseData(), task.getSubTaskDataList());
 
             // Возвращаем клиенту идентификатор задачи
@@ -50,6 +50,7 @@ public class MyGridService extends GridServiceGrpc.GridServiceImplBase {
             responseObserver.onError(e);
         }
     }
+
 
     private void sendTasksToDistributor(String taskId, byte[] jarData, byte[] baseData, List<byte[]> subTaskDataList) {
         try {
@@ -75,33 +76,61 @@ public class MyGridService extends GridServiceGrpc.GridServiceImplBase {
                 TaskResponse response = distributorStub.addTask(taskRequest);
                 System.out.println("Подзадача отправлена на распределитель: " + response.getTaskId());
             }
+            Thread.sleep(3000);
+            ResultRequest resultRequest = ResultRequest.newBuilder()
+                    .setTaskId(taskId)
+                    .build();
+            try {
+                ResultResponse resultResponse = distributorStub.getResult(resultRequest);
+                byte[] resultData = resultResponse.getResultData().toByteArray();
 
+                // Сохраняем результат
+                saveResult(taskId, resultData);
+            }
+            catch (Exception e)
+            {
+                System.err.println("Ошибка при попытке получить результат с распределятора: " + e.getMessage());
+            }
             distributorChannel.shutdown();
         } catch (Exception e) {
             System.err.println("Ошибка при отправке подзадач на распределитель: " + e.getMessage());
             e.printStackTrace();
         }
     }
+    public void saveResult(String taskId, byte[] resultData) {
+        results.put(taskId, resultData);
+        System.out.println("Результат для задачи " + taskId + " успешно сохранен");
+    }
+
 
     @Override
     public void getResult(ResultRequest request, StreamObserver<ResultResponse> responseObserver) {
         try {
             String taskId = request.getTaskId();
+            System.out.println("Получен запрос на результат для задачи: " + taskId);
+
             byte[] resultData = results.get(taskId);
+            System.out.println("Результат для задачи " + taskId + ": " + (resultData != null ? "найден" : "не найден"));
 
             if (resultData == null) {
+                System.err.println("Ошибка: результат не найден для задачи " + taskId);
                 responseObserver.onError(new RuntimeException("Результат не найден для задачи " + taskId));
                 return;
             }
 
+            System.out.println("Отправка результата для задачи " + taskId);
             responseObserver.onNext(ResultResponse.newBuilder()
                     .setResultData(ByteString.copyFrom(resultData))
                     .build());
             responseObserver.onCompleted();
+            System.out.println("Результат для задачи " + taskId + " успешно отправлен");
         } catch (Exception e) {
+            System.err.println("Ошибка при обработке запроса на результат: " + e.getMessage());
+            e.printStackTrace();
             responseObserver.onError(e);
         }
     }
+
 
     // Метод для запуска сервера
     public static void main(String[] args) throws Exception {
