@@ -7,9 +7,9 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import ru.karpenko.model.SubTask;
 
 import java.io.*;
+import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
 import java.net.URL;
 import java.net.URLClassLoader;
@@ -21,14 +21,12 @@ import java.nio.file.StandardCopyOption;
 import java.util.*;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
-import java.util.jar.JarOutputStream;
 
 @SpringBootApplication
 @RestController
 public class Worker {
     private static final String JAR_PATH = "solver.jar";
     private static final ObjectMapper objectMapper = new ObjectMapper();
-    private static final Map<String, Object> baseDataCache = new HashMap<>();
 
     @PostMapping("/solveSubtask")
     public byte[] solveSubtask(
@@ -55,7 +53,7 @@ public class Worker {
 
             // 2. Десериализуем baseData и subTaskData
             Object baseDataObj = null;
-            SubTask subTask = null;
+            Object subTaskObj = null;
 
             if (baseData != null && !baseData.isEmpty()) {
                 try (InputStream is = baseData.getInputStream();
@@ -68,18 +66,9 @@ public class Worker {
             if (subTaskData != null && !subTaskData.isEmpty()) {
                 try (InputStream is = subTaskData.getInputStream();
                      ObjectInputStream ois = new ObjectInputStream(is)) {
-                    Object obj = ois.readObject();
-                    if (obj instanceof SubTask) {
-                        subTask = (SubTask) obj;
-                        System.out.println("Подзадача успешно десериализована: " + subTask);
-                    } else {
-                        System.err.println("Ошибка: полученный объект не является SubTask, а является " + obj.getClass().getName());
-                    }
+                    subTaskObj = ois.readObject();
+                    System.out.println("Подзадача успешно десериализована: " + subTaskObj);
                 }
-            }
-
-            if (subTask == null) {
-                throw new RuntimeException("Не удалось десериализовать подзадачу в объект SubTask");
             }
 
             // 3. Загружаем классы из JAR
@@ -90,7 +79,7 @@ public class Worker {
             System.out.println("Найден метод для выполнения: " + mainMethod.getName());
 
             // 5. Получаем параметры для метода
-            Object[] parameters = getMethodParameters(mainMethod, subTask);
+            Object[] parameters = getMethodParameters(mainMethod, subTaskObj);
             System.out.println("Получено " + parameters.length + " параметров для метода");
 
             // 6. Выполняем метод
@@ -113,30 +102,32 @@ public class Worker {
         }
     }
 
-
-
-
-    private Object[] getMethodParameters(Method method, SubTask subTask) throws Exception {
+    private Object[] getMethodParameters(Method method, Object subTaskObj) throws Exception {
         Class<?>[] paramTypes = method.getParameterTypes();
         System.out.println("Метод принимает " + paramTypes.length + " параметров");
 
-        if (paramTypes.length != 1) {
-            throw new RuntimeException("Метод должен принимать 1 параметр");
+        Object[] parameters = new Object[paramTypes.length];
+        Annotation[][] paramAnnotations = method.getParameterAnnotations();
+
+        for (int i = 0; i < paramTypes.length; i++) {
+            for (Annotation annotation : paramAnnotations[i]) {
+                if (annotation instanceof Param) {
+                    String paramName = ((Param) annotation).value();
+                    Object paramValue = getParamValue(subTaskObj, paramName);
+                    parameters[i] = paramValue;
+                }
+            }
         }
 
-        Class<?> paramType = paramTypes[0];
-        System.out.println("Тип параметра: " + paramType.getName());
-
-        if (paramType.equals(SubTask.class)) {
-            printSubTaskParameters(subTask);
-            return new Object[]{subTask};
-        } else {
-            throw new RuntimeException("Неподдерживаемый тип параметра: " + paramType.getName());
-        }
+        return parameters;
     }
 
-
-
+    private Object getParamValue(Object subTaskObj, String paramName) throws Exception {
+        // Используем рефлексию для получения значения поля из объекта subTaskObj
+        java.lang.reflect.Field field = subTaskObj.getClass().getDeclaredField(paramName);
+        field.setAccessible(true);
+        return field.get(subTaskObj);
+    }
 
     private URLClassLoader loadJarClassLoader() throws Exception {
         Path jarPath = Paths.get(JAR_PATH);
@@ -175,7 +166,7 @@ public class Worker {
 
     private Object invokeMainMethod(Method method, Object[] parameters) throws Exception {
         try {
-            // Создаем экземпляр класса MatrixSearch
+            // Создаем экземпляр класса
             Object instance = method.getDeclaringClass().newInstance();
 
             System.out.println("Вызов метода " + method.getName() + " с параметрами:");
@@ -183,7 +174,7 @@ public class Worker {
                 System.out.println("  Параметр " + i + ": " + parameters[i]);
             }
 
-            // Передаем экземпляр класса в метод invoke
+            // Вызываем метод
             Object result = method.invoke(instance, parameters);
 
             if (result == null) {
@@ -195,15 +186,6 @@ public class Worker {
             System.err.println("Ошибка при вызове метода: " + e.getMessage());
             throw e;
         }
-    }
-
-
-    private void printSubTaskParameters(SubTask subTask) {
-        System.out.println("Параметры SubTask:");
-        System.out.println("adjacencyMatrix: " + Arrays.deepToString(subTask.getAdjacencyMatrix()));
-        System.out.println("startCombination: " + subTask.getStartCombination());
-        System.out.println("combinationsCount: " + subTask.getCombinationsCount());
-        System.out.println("pathLength: " + subTask.getPathLength());
     }
 
     private byte[] serializeResult(Object result) throws Exception {
