@@ -7,15 +7,19 @@ import io.grpc.ServerBuilder;
 import io.grpc.stub.StreamObserver;
 import com.google.protobuf.ByteString;
 import ru.karpenko.model.Task;
+import ru.karpenko.model.BatchResult;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.ObjectInputStream;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.*;
 
 public class MyGridService extends GridServiceGrpc.GridServiceImplBase {
     private final Map<String, Task> tasks = new HashMap<>();
-    private final Map<String, byte[]> results = new HashMap<>();
+    private final Map<String, List<BatchResult>> batchResults = new HashMap<>();
+    private final Map<String, byte[]> results = new HashMap<>(); // Добавлено поле results
     private byte[] solverJarBytes;
 
     public MyGridService() throws Exception {
@@ -38,7 +42,10 @@ public class MyGridService extends GridServiceGrpc.GridServiceImplBase {
             Task task = new Task(adjacencyMatrix, request.getMatrixSize(), request.getPathLength());
             tasks.put(taskId, task);
 
-            // Отправляем подзадачи на распределитель и сохраняем результат
+            // Инициализируем список для хранения результатов батчей
+            batchResults.put(taskId, new ArrayList<>());
+
+            // Отправляем подзадачи на распределитель
             sendTasksToDistributor(taskId, solverJarBytes, task.getBaseData(), task.getSubTaskDataList());
 
             // Возвращаем клиенту идентификатор задачи
@@ -50,7 +57,6 @@ public class MyGridService extends GridServiceGrpc.GridServiceImplBase {
             responseObserver.onError(e);
         }
     }
-
 
     private void sendTasksToDistributor(String taskId, byte[] jarData, byte[] baseData, List<byte[]> subTaskDataList) {
         try {
@@ -76,32 +82,43 @@ public class MyGridService extends GridServiceGrpc.GridServiceImplBase {
                 TaskResponse response = distributorStub.addTask(taskRequest);
                 System.out.println("Подзадача отправлена на распределитель: " + response.getTaskId());
             }
-            Thread.sleep(3000);
-            ResultRequest resultRequest = ResultRequest.newBuilder()
-                    .setTaskId(taskId)
-                    .build();
-            try {
-                ResultResponse resultResponse = distributorStub.getResult(resultRequest);
-                byte[] resultData = resultResponse.getResultData().toByteArray();
 
-                // Сохраняем результат
-                saveResult(taskId, resultData);
-            }
-            catch (Exception e)
-            {
-                System.err.println("Ошибка при попытке получить результат с распределятора: " + e.getMessage());
-            }
+            // Ждём завершения обработки всех батчей
+            Thread.sleep(3000);
+
+            // Собираем результаты со всех батчей
+            collectResultsFromDistributor(taskId, distributorStub);
+
             distributorChannel.shutdown();
         } catch (Exception e) {
             System.err.println("Ошибка при отправке подзадач на распределитель: " + e.getMessage());
             e.printStackTrace();
         }
     }
+
+    private void collectResultsFromDistributor(String taskId, DistributorServiceGrpc.DistributorServiceBlockingStub distributorStub) {
+        try {
+            ResultRequest resultRequest = ResultRequest.newBuilder()
+                    .setTaskId(taskId)
+                    .build();
+
+            ResultResponse resultResponse = distributorStub.getResult(resultRequest);
+            byte[] resultData = resultResponse.getResultData().toByteArray();
+
+            // Сохраняем результат
+            saveResult(taskId, resultData);
+
+            System.out.println("Результат для задачи " + taskId + " успешно получен и сохранён");
+        } catch (Exception e) {
+            System.err.println("Ошибка при попытке получить результат с распределителя: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
     public void saveResult(String taskId, byte[] resultData) {
         results.put(taskId, resultData);
         System.out.println("Результат для задачи " + taskId + " успешно сохранен");
     }
-
 
     @Override
     public void getResult(ResultRequest request, StreamObserver<ResultResponse> responseObserver) {

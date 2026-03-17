@@ -40,7 +40,7 @@ public class Task implements Serializable {
     private List<byte[]> generateSubTasks() {
         List<byte[]> subTasks = new ArrayList<>();
         int totalCombinations = calculateTotalCombinations();
-        int batchSize = 2000000;
+        int batchSize = 20000;
         for (int start = 0; start < totalCombinations; start += batchSize) {
             int currentBatchSize = Math.min(batchSize, totalCombinations - start);
             byte[] subTaskData = serializeSubTask(start, currentBatchSize);
