@@ -32,22 +32,12 @@ public class DistributorService extends DistributorServiceGrpc.DistributorServic
             byte[] baseData = request.getBaseData().toByteArray();
             byte[] subTaskData = request.getSubTaskData().toByteArray();
 
-            System.out.println("Полученные данные на распределителе:");
-            System.out.println("JAR данные (размер: " + jarData.length + " байт)");
-            System.out.println("Base данные (размер: " + baseData.length + " байт)");
-            System.out.println("Подзадача данные (размер: " + subTaskData.length + " байт)");
-
-            // Отправляем подзадачу воркеру
-            System.out.println("Отправка подзадачи на воркер...");
             byte[] result = sendToWorker(taskId, jarData, baseData, subTaskData);
-            System.out.println("Подзадача успешно отправлена на воркер");
 
             // Сохраняем результат
             results.put(taskId, result);
             System.out.println("Результат для задачи " + taskId + " успешно сохранен на распределителе");
 
-            // Возвращаем успешный ответ
-            System.out.println("Отправка ответа клиенту для задачи " + taskId);
             responseObserver.onNext(TaskResponse.newBuilder().setTaskId(taskId).build());
             responseObserver.onCompleted();
             System.out.println("Ответ клиенту для задачи " + taskId + " успешно отправлен");
