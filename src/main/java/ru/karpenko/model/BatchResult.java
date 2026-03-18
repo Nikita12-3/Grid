@@ -1,23 +1,35 @@
 package ru.karpenko.model;
 
-import java.io.ByteArrayInputStream;
-import java.io.ObjectInputStream;
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import java.io.Serializable;
+import java.util.List;
 
-public class BatchResult {
-    private int startCombination;
-    private byte[] resultData;
+public class BatchResult implements Serializable {
+    private final List<Integer> path;
+    private final int cost;
 
-    public BatchResult(int startCombination, byte[] resultData) {
-        this.startCombination = startCombination;
-        this.resultData = resultData;
+    @JsonCreator
+    public BatchResult(
+            @JsonProperty("path") List<Integer> path,
+            @JsonProperty("cost") int cost) {
+        this.path = path;
+        this.cost = cost;
     }
 
-    public int getStartCombination() {
-        return startCombination;
+    public List<Integer> getPath() {
+        return path;
     }
 
-    public byte[] getResultData() {
-        return resultData;
+    public int getCost() {
+        return cost;
+    }
+    @Override
+    public String toString() {
+        return "BatchResult{" +
+                "path=" + path +
+                ", cost=" + cost +
+                '}';
     }
 }

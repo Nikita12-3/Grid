@@ -39,8 +39,8 @@ public class Task implements Serializable {
 
     private List<byte[]> generateSubTasks() {
         List<byte[]> subTasks = new ArrayList<>();
-        int totalCombinations = calculateTotalCombinations();
-        int batchSize = 20000;
+        int totalCombinations = calculateTotalCombinations(matrixSize, pathLength);
+        int batchSize = 2000000;
         for (int start = 0; start < totalCombinations; start += batchSize) {
             int currentBatchSize = Math.min(batchSize, totalCombinations - start);
             byte[] subTaskData = serializeSubTask(start, currentBatchSize);
@@ -49,14 +49,17 @@ public class Task implements Serializable {
         return subTasks;
     }
 
-    public int calculateTotalCombinations() {
-        return (int) Math.pow(matrixSize, pathLength);
+    public int calculateTotalCombinations(int matrixSize, int pathLength) {
+        int totalCombinations = 1;
+        for (int i = 0; i < pathLength; i++) {
+            totalCombinations *= (matrixSize - i);
+        }
+        return totalCombinations;
     }
 
     public byte[] serializeSubTask(int start, int batchSize) {
         try (ByteArrayOutputStream bos = new ByteArrayOutputStream();
              ObjectOutputStream oos = new ObjectOutputStream(bos)) {
-            // Сериализуем объект SubTask
             SubTask subTask = new SubTask(adjacencyMatrix, start, batchSize, pathLength);
             oos.writeObject(subTask);
             return bos.toByteArray();
