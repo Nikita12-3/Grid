@@ -9,11 +9,8 @@ import org.springframework.web.client.RestTemplate;
 import org.springframework.http.*;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
-import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -26,29 +23,30 @@ public class DistributorService extends DistributorServiceGrpc.DistributorServic
     public void addTask(DistributorTaskRequest request, StreamObserver<TaskResponse> responseObserver) {
         try {
             String taskId = request.getTaskId();
-            System.out.println("Получен запрос на обработку задачи: " + taskId);
+            System.out.println("[DISTRIBUTOR] Получен запрос на обработку задачи: " + taskId);
 
             byte[] jarData = request.getJarData().toByteArray();
             byte[] baseData = request.getBaseData().toByteArray();
             byte[] subTaskData = request.getSubTaskData().toByteArray();
 
+            System.out.println("[DISTRIBUTOR] Отправляем батч на воркер для задачи: " + taskId);
             byte[] result = sendToWorker(taskId, jarData, baseData, subTaskData);
+            System.out.println("[DISTRIBUTOR] Получен результат от воркера для задачи: " + taskId);
 
             // Сохраняем результат
             results.put(taskId, result);
-            System.out.println("Результат для задачи " + taskId + " успешно сохранен на распределителе");
+            System.out.println("[DISTRIBUTOR] Результат для задачи " + taskId + " сохранен");
 
+            System.out.println("[DISTRIBUTOR] Отправляем ответ формирователю для задачи: " + taskId);
             responseObserver.onNext(TaskResponse.newBuilder().setTaskId(taskId).build());
             responseObserver.onCompleted();
-            System.out.println("Ответ клиенту для задачи " + taskId + " успешно отправлен");
+            System.out.println("[DISTRIBUTOR] Ответ формирователю для задачи " + taskId + " отправлен");
         } catch (Exception e) {
-            System.err.println("Ошибка в addTask: " + e.getMessage());
+            System.err.println("[DISTRIBUTOR] Ошибка в addTask: " + e.getMessage());
             e.printStackTrace();
             responseObserver.onError(e);
         }
     }
-
-
 
     private byte[] sendToWorker(String taskId, byte[] jarData, byte[] baseData, byte[] subTaskData) {
         try {
@@ -78,50 +76,50 @@ public class DistributorService extends DistributorServiceGrpc.DistributorServic
 
             HttpEntity<MultiValueMap<String, Object>> requestEntity = new HttpEntity<>(body, headers);
 
+            System.out.println("[DISTRIBUTOR] Отправляем запрос на воркер для задачи: " + taskId);
             ResponseEntity<byte[]> response = restTemplate.exchange(
                     "http://localhost:8080/solveSubtask",
                     HttpMethod.POST,
                     requestEntity,
                     byte[].class
             );
+            System.out.println("[DISTRIBUTOR] Получен ответ от воркера для задачи: " + taskId);
 
             return response.getBody();
         } catch (Exception e) {
-            System.err.println("Ошибка при отправке на воркер: " + e.getMessage());
+            System.err.println("[DISTRIBUTOR] Ошибка при отправке на воркер: " + e.getMessage());
             e.printStackTrace();
             return new byte[0];
         }
     }
 
-
     @Override
     public void getResult(ResultRequest request, StreamObserver<ResultResponse> responseObserver) {
         try {
             String taskId = request.getTaskId();
-            System.out.println("Получен запрос на результат для задачи: " + taskId);
+            System.out.println("[DISTRIBUTOR] Получен запрос на результат для задачи: " + taskId);
 
             byte[] resultData = results.get(taskId);
-            System.out.println("Результат для задачи " + taskId + ": " + (resultData != null ? "найден" : "не найден"));
+            System.out.println("[DISTRIBUTOR] Результат для задачи " + taskId + ": " + (resultData != null ? "найден" : "не найден"));
 
             if (resultData == null) {
-                System.err.println("Ошибка: результат не найден для задачи " + taskId);
+                System.err.println("[DISTRIBUTOR] Ошибка: результат не найден для задачи " + taskId);
                 responseObserver.onError(new RuntimeException("Результат не найден для задачи " + taskId));
                 return;
             }
 
-            System.out.println("Отправка результата для задачи " + taskId);
+            System.out.println("[DISTRIBUTOR] Отправляем результат формирователю для задачи: " + taskId);
             responseObserver.onNext(ResultResponse.newBuilder()
                     .setResultData(ByteString.copyFrom(resultData))
                     .build());
             responseObserver.onCompleted();
-            System.out.println("Результат для задачи " + taskId + " успешно отправлен");
+            System.out.println("[DISTRIBUTOR] Результат для задачи " + taskId + " отправлен формирователю");
         } catch (Exception e) {
-            System.err.println("Ошибка при обработке запроса на результат: " + e.getMessage());
+            System.err.println("[DISTRIBUTOR] Ошибка при обработке запроса на результат: " + e.getMessage());
             e.printStackTrace();
             responseObserver.onError(e);
         }
     }
-
 
     public static void main(String[] args) throws IOException, InterruptedException {
         Server server = ServerBuilder.forPort(8082)
@@ -129,10 +127,10 @@ public class DistributorService extends DistributorServiceGrpc.DistributorServic
                 .build()
                 .start();
 
-        System.out.println("Распределитель запущен на порту 8082");
+        System.out.println("[DISTRIBUTOR] Сервер распределителя запущен на порту 8082");
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            System.out.println("Остановка сервера распределителя...");
+            System.out.println("[DISTRIBUTOR] Остановка сервера распределителя...");
             server.shutdown();
         }));
 
