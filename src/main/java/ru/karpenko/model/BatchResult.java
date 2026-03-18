@@ -1,0 +1,29 @@
+package ru.karpenko.model;
+
+import java.io.Serializable;
+import java.util.List;
+
+public class BatchResult implements Serializable {
+    private final List<Integer> path;
+    private final int cost;
+
+    public BatchResult(List<Integer> path, int cost) {
+        this.path = path;
+        this.cost = cost;
+    }
+
+    public List<Integer> getPath() {
+        return path;
+    }
+
+    public int getCost() {
+        return cost;
+    }
+    @Override
+    public String toString() {
+        return "BatchResult{" +
+                "path=" + path +
+                ", cost=" + cost +
+                '}';
+    }
+}

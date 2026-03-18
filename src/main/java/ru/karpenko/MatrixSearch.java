@@ -1,6 +1,7 @@
 package ru.karpenko;
 
 import ru.karpenko.model.SubTask;
+import ru.karpenko.model.BatchResult;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -8,11 +9,9 @@ import java.util.List;
 public class MatrixSearch {
     private int[][] adjacencyMatrix;
     private int pathLength;
-    private int minCost;
-    private List<Integer> minPath;
 
     @MainAnnotation
-    public List<Integer> findCheapestPath(
+    public BatchResult findCheapestPath(
             @Param("adjacencyMatrix") int[][] adjacencyMatrix,
             @Param("pathLength") int pathLength,
             @Param("startCombination") int startCombination,
@@ -20,40 +19,62 @@ public class MatrixSearch {
 
         this.adjacencyMatrix = adjacencyMatrix;
         this.pathLength = pathLength;
-        this.minCost = Integer.MAX_VALUE;
-        this.minPath = new ArrayList<>();
 
-        for (int startCity = 0; startCity < adjacencyMatrix.length; startCity++) {
-            List<Integer> currentPath = new ArrayList<>();
-            currentPath.add(startCity);
-            findPath(startCity, 0, currentPath, new boolean[adjacencyMatrix.length]);
-        }
+        int minCost = Integer.MAX_VALUE;
+        List<Integer> minPath = new ArrayList<>();
 
-        return minPath;
-    }
+        for (int i = startCombination; i < startCombination + combinationsCount; i++) {
+            List<Integer> currentPath = getCombinationByNumber(i, adjacencyMatrix.length, pathLength);
+            int currentCost = calculatePathCost(currentPath);
 
-    private void findPath(int currentCity, int currentCost, List<Integer> currentPath, boolean[] visited) {
-        if (currentPath.size() == pathLength) {
             if (currentCost < minCost) {
                 minCost = currentCost;
-                minPath = new ArrayList<>(currentPath);
+                minPath = currentPath;
             }
-            return;
         }
 
-        visited[currentCity] = true;
+        return new BatchResult(minPath, minCost);
+    }
 
-        for (int nextCity = 0; nextCity < adjacencyMatrix.length; nextCity++) {
-            if (!visited[nextCity] && adjacencyMatrix[currentCity][nextCity] > 0) {
-                int newCost = currentCost + adjacencyMatrix[currentCity][nextCity];
-                if (newCost < minCost) {
-                    currentPath.add(nextCity);
-                    findPath(nextCity, newCost, currentPath, visited);
-                    currentPath.remove(currentPath.size() - 1);
+    private List<Integer> getCombinationByNumber(int combinationNumber, int matrixSize, int pathLength) {
+        List<Integer> combination = new ArrayList<>();
+        boolean[] used = new boolean[matrixSize];
+
+        for (int i = 0; i < pathLength; i++) {
+            int factorial = factorial(matrixSize - i - 1);
+            int index = combinationNumber / factorial;
+            combinationNumber %= factorial;
+
+            int city = 0;
+            while (index >= 0) {
+                if (!used[city]) {
+                    if (index == 0) {
+                        used[city] = true;
+                        combination.add(city);
+                        break;
+                    }
+                    index--;
                 }
+                city++;
             }
         }
 
-        visited[currentCity] = false;
+        return combination;
+    }
+
+    private int factorial(int n) {
+        int result = 1;
+        for (int i = 2; i <= n; i++) {
+            result *= i;
+        }
+        return result;
+    }
+
+    private int calculatePathCost(List<Integer> path) {
+        int cost = 0;
+        for (int i = 0; i < path.size() - 1; i++) {
+            cost += adjacencyMatrix[path.get(i)][path.get(i + 1)];
+        }
+        return cost;
     }
 }
