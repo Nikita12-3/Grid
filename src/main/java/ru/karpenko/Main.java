@@ -44,7 +44,7 @@ public class Main {
 
         TaskRequest request = TaskRequest.newBuilder()
                 .setMatrixSize(15)
-                .setPathLength(6)
+                .setPathLength(7)
                 .addAllAdjacencyMatrix(
                         Arrays.stream(adjacencyMatrix)
                                 .map(row -> MatrixRow.newBuilder()
