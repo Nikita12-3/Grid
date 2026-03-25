@@ -1,78 +1,47 @@
 package ru.karpenko;
 
-import org.springframework.boot.CommandLineRunner;
-import org.springframework.boot.SpringApplication;
-import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.boot.web.server.servlet.context.ServletWebServerApplicationContext;
-import org.springframework.context.annotation.Bean;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.*;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.multipart.MultipartFile;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.*;
 import java.lang.annotation.Annotation;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.net.URL;
 import java.net.URLClassLoader;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
-import java.util.*;
+import java.nio.file.*;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.Enumeration;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 
-@SpringBootApplication
-@RestController
-@RequestMapping("/worker")
-public class Worker {
-    private static final String JAR_PATH = "solver.jar";
+//@Service
+public class WorkerService {
     private static final ObjectMapper objectMapper = new ObjectMapper();
-    private static final RestTemplate restTemplate = new RestTemplate();
+    private static final String JAR_PATH = "solver.jar";
+    private RestTemplate restTemplate = new RestTemplate();
 
-    public static void main(String[] args) {
-        SpringApplication.run(Worker.class, args);
-    }
-
-    @Bean
-    public CommandLineRunner registerWorker(ServletWebServerApplicationContext context) {
-        return args -> {
-            int port = context.getWebServer().getPort();
-            String workerUrl = "http://localhost:" + port + "/worker";
-            RestTemplate restTemplate = new RestTemplate();
-            String response = restTemplate.postForObject(
-                    "http://localhost:8083/distributor/registerWorker",
-                    workerUrl,
-                    String.class
-            );
-            System.out.println("Регистрация воркера: " + response);
-        };
-    }
-
-    @PostMapping("/solveSubtask")
     public byte[] solveSubtask(
-            @RequestParam String taskId,
-            @RequestParam(required = false) MultipartFile jar,
-            @RequestParam(required = false) MultipartFile baseData,
-            @RequestParam(required = false) MultipartFile subTaskData,
-            @RequestParam(required = false, defaultValue = "http://localhost:8083") String managerAddress) {
+            String taskId,
+            MultipartFile jar,
+            MultipartFile baseData,
+            MultipartFile subTaskData,
+            String managerAddress) {
 
         System.out.println("\n=== Начало обработки задачи " + taskId + " ===");
         System.out.println("managerAddress: " + managerAddress);
-
-        sendTaskAccepted(taskId, managerAddress);
 
         Path tempDir = null;
 
         try {
             if (jar != null && !jar.isEmpty()) {
                 System.out.println("Получен JAR файл размером: " + jar.getSize() + " байт");
+
                 tempDir = Files.createTempDirectory("solver");
                 Path tempJarPath = tempDir.resolve("solver.jar");
 
@@ -115,8 +84,6 @@ public class Worker {
                 byte[] resultBytes = serializeResult(result);
                 System.out.println("Результат сериализован, размер: " + resultBytes.length + " байт");
 
-                sendResult(taskId, resultBytes, managerAddress);
-
                 System.out.println("=== Задача " + taskId + " выполнена успешно ===\n");
                 return resultBytes;
             } else {
@@ -148,35 +115,32 @@ public class Worker {
         }
     }
 
-    private void sendTaskAccepted(String taskId, String managerAddress) {
-        try {
-            restTemplate.postForObject(
-                    managerAddress + "/distributor/taskAccepted/" + taskId,
-                    null,
-                    String.class
-            );
-            System.out.println("Подзадача №" + taskId + " воркером принята");
-        } catch (Exception e) {
-            System.err.println("Ошибка при отправке подтверждения: " + e.getMessage());
-        }
+    // Остальные методы остаются без изменений
+    public void sendTaskAccepted(String taskId, String managerAddress) {
+        restTemplate.postForObject(
+                managerAddress + "/distributor/taskAccepted/" + taskId,
+                null,
+                String.class
+        );
     }
 
-    private void sendResult(String taskId, byte[] result, String managerAddress) {
+    public void sendResult(String taskId, byte[] result, String managerAddress) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
+
+        HttpEntity<byte[]> requestEntity = new HttpEntity<>(result, headers);
+
         try {
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
-
-            HttpEntity<byte[]> requestEntity = new HttpEntity<>(result, headers);
-
             ResponseEntity<String> response = restTemplate.exchange(
                     managerAddress + "/distributor/result/" + taskId,
                     HttpMethod.POST,
                     requestEntity,
                     String.class
             );
-            System.out.println("Результат для подзадачи №" + taskId + " отправлен на распределитель");
+            System.out.println("Результат отправлен: " + response.getStatusCode());
         } catch (Exception e) {
             System.err.println("Ошибка при отправке результата: " + e.getMessage());
+            throw e;
         }
     }
 
@@ -242,32 +206,24 @@ public class Worker {
     }
 
     private Object invokeMainMethod(Method method, Object[] parameters) throws Exception {
-        final Object[] resultHolder = new Object[1];
-
-        Thread invokeThread = new Thread(() -> {
-            try {
-                Object instance = method.getDeclaringClass().newInstance();
-                System.out.println("Вызов метода " + method.getName() + " с параметрами:");
-                for (int i = 0; i < parameters.length; i++) {
-                    System.out.println("  Параметр " + i + ": " + parameters[i]);
-                }
-
-                Object result = method.invoke(instance, parameters);
-                resultHolder[0] = result;
-
-                if (result == null) {
-                    System.err.println("Предупреждение: метод вернул null");
-                    resultHolder[0] = new ArrayList<>();
-                }
-            } catch (Exception e) {
-                System.err.println("Ошибка при вызове метода: " + e.getMessage());
+        try {
+            Object instance = method.getDeclaringClass().newInstance();
+            System.out.println("Вызов метода " + method.getName() + " с параметрами:");
+            for (int i = 0; i < parameters.length; i++) {
+                System.out.println("  Параметр " + i + ": " + parameters[i]);
             }
-        });
 
-        invokeThread.start();
-        invokeThread.join(); // Ожидаем завершения потока
+            Object result = method.invoke(instance, parameters);
 
-        return resultHolder[0];
+            if (result == null) {
+                System.err.println("Предупреждение: метод вернул null");
+                return new ArrayList<>();
+            }
+            return result;
+        } catch (Exception e) {
+            System.err.println("Ошибка при вызове метода: " + e.getMessage());
+            throw e;
+        }
     }
 
     private byte[] serializeResult(Object result) throws Exception {

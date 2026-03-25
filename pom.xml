@@ -63,7 +63,7 @@
             <artifactId>gRPC-Solver</artifactId>
             <version>1.0</version>
             <scope>system</scope>
-            <systemPath>${project.basedir}/../gRPC-Solver/target/gRPC-Solver-1.0-SNAPSHOT.jar</systemPath>
+            <systemPath>E:/4 курс/Грид вычисления/2 семестр/gRPS/gRPC-Solver/target/gRPC-Solver-1.0-SNAPSHOT.jar</systemPath>
         </dependency>
 
     </dependencies>
@@ -82,7 +82,7 @@
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <version>4.0.2</version>
                 <configuration>
-                    <mainClass>grid.WorkerApplication</mainClass>
+                    <mainClass>ru.karpenko.Worker</mainClass>
                     <layers>
                         <enabled>true</enabled>
                     </layers>
