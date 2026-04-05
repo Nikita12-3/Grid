@@ -1,6 +1,6 @@
 package ru.karpenko;
 
-import ru.karpenko.model.SubTask;
+
 import ru.karpenko.model.BatchResult;
 
 import java.util.ArrayList;
