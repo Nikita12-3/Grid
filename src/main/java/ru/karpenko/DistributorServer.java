@@ -2,6 +2,7 @@ package ru.karpenko;
 
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
+import jakarta.annotation.PostConstruct;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.ConfigurableApplicationContext;
@@ -32,6 +33,7 @@ public class DistributorServer {
 
         grpcServer.awaitTermination();
     }
+
     @Bean
     public RestTemplate restTemplate() {
         return new RestTemplate();

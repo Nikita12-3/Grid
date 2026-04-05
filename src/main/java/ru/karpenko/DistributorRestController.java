@@ -1,5 +1,6 @@
 package ru.karpenko;
 
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -18,15 +19,24 @@ public class DistributorRestController {
         return ResponseEntity.ok(workerId);
     }
 
-    @PostMapping("/taskAccepted/{taskId}")
-    public void taskAccepted(@PathVariable String taskId) {
-        System.out.println("[DISTRIBUTOR] Подзадача №" + taskId + " воркером принята");
+    @PostMapping("/taskAccepted/{subtaskId}")
+    public void taskAccepted(@PathVariable String subtaskId) {
+        System.out.println("[DISTRIBUTOR] Подзадача №" + subtaskId + " воркером принята");
     }
 
-    @PostMapping("/result/{taskId}")
-    public void receiveResult(@PathVariable String taskId, @RequestBody byte[] result) {
-        distributorService.saveResult(taskId, result);
-        distributorService.freeWorker("http://localhost:" + System.getProperty("server.port"));
-        System.out.println("[DISTRIBUTOR] Результат для задачи №" + taskId + " получен и сохранён");
+    @PostMapping(value = "/result", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public void receiveResult(@RequestBody ResultResponse result) {
+        try {
+            System.out.println("[DISTRIBUTOR] Результат получен для подзадачи: " + result.getSubtaskId());
+            System.out.println("[DISTRIBUTOR] Задача: " + result.getTaskId() + ", Воркер: " + result.getWorkerId());
+            distributorService.receiveResult(result);
+            System.out.println("[DISTRIBUTOR] Результат для подзадачи №" + result.getSubtaskId() +
+                    ", Задача: " + result.getTaskId() +
+                    ", Воркер: " + result.getWorkerId() +
+                    " получен и сохранён");
+        } catch (Exception e) {
+            System.err.println("[DISTRIBUTOR] Ошибка при обработке результата: " + e.getMessage());
+            e.printStackTrace();
+        }
     }
 }
