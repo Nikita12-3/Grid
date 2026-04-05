@@ -24,6 +24,7 @@ message DistributorTaskRequest {
 message TaskResponse {
     string subtaskId = 1;
     string workerId = 2;
+    string  taskId = 3;
 }
 
 message ResultResponse {
