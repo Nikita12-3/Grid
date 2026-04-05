@@ -19,7 +19,6 @@ import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
 import java.net.URL;
 import java.net.URLClassLoader;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -58,17 +57,15 @@ public class Worker {
     }
 
     @PostMapping("/solveSubtask")
-    public byte[] solveSubtask(
-            @RequestParam(required = false) String taskId,
-            @RequestParam(required = false) String subtaskId,
+    public ResponseEntity<String> solveSubtask(
+            @RequestParam String taskId,
+            @RequestParam String subtaskId,
             @RequestParam(required = false) MultipartFile jar,
             @RequestParam(required = false) MultipartFile baseData,
             @RequestParam(required = false) MultipartFile subTaskData,
             @RequestParam(required = false, defaultValue = "http://localhost:8083") String managerAddress) {
 
-        String currentTaskId = taskId != null ? taskId : subtaskId;
-
-        System.out.println("\n=== Начало обработки задачи " + currentTaskId + " ===");
+        System.out.println("\n=== Начало обработки подзадачи " + subtaskId + " ===");
         System.out.println("managerAddress: " + managerAddress);
 
         sendTaskAccepted(subtaskId, managerAddress);
@@ -120,20 +117,20 @@ public class Worker {
                 byte[] resultBytes = serializeResult(result);
                 System.out.println("Результат сериализован, размер: " + resultBytes.length + " байт");
 
-                sendResult(currentTaskId, subtaskId, workerId, resultBytes, managerAddress);
+                sendResult(subtaskId, resultBytes, managerAddress);
 
-                System.out.println("=== Задача " + currentTaskId + " выполнена успешно ===\n");
-                return resultBytes;
+                System.out.println("=== Подзадача " + subtaskId + " выполнена успешно ===\n");
+                return ResponseEntity.ok("Подзадача " + subtaskId + " выполнена успешно");
             } else {
                 System.out.println("JAR файл не получен");
-                return new byte[0];
+                return ResponseEntity.badRequest().body("JAR файл не получен");
             }
         } catch (Exception e) {
             System.err.println("\n=== ОШИБКА В РАБОТЕ ВОРКЕРА ===");
-            System.err.println("Ошибка при обработке задачи " + currentTaskId + ": " + e.getMessage());
+            System.err.println("Ошибка при обработке подзадачи " + subtaskId + ": " + e.getMessage());
             e.printStackTrace();
             System.err.println("=============================\n");
-            return new byte[0];
+            return ResponseEntity.internalServerError().body("Ошибка при обработке подзадачи: " + e.getMessage());
         } finally {
             if (tempDir != null) {
                 try {
@@ -153,47 +150,35 @@ public class Worker {
         }
     }
 
-    private void sendTaskAccepted(String subTaskId, String managerAddress) {
+    private void sendTaskAccepted(String subtaskId, String managerAddress) {
         try {
             restTemplate.postForObject(
-                    managerAddress + "/distributor/taskAccepted/" + subTaskId,
+                    managerAddress + "/distributor/taskAccepted/" + subtaskId,
                     null,
                     String.class
             );
-            System.out.println("Подзадача №" + subTaskId + " воркером принята");
+            System.out.println("Подзадача №" + subtaskId + " воркером принята");
         } catch (Exception e) {
             System.err.println("Ошибка при отправке подтверждения: " + e.getMessage());
         }
     }
 
-    private void sendResult(String taskId, String subtaskId, String workerId, byte[] resultData, String managerAddress) {
+    private void sendResult(String subtaskId, byte[] result, String managerAddress) {
         try {
-            // Создаём JSON-объект с нужными полями
-            Map<String, Object> resultJson = new HashMap<>();
-            resultJson.put("taskId", taskId);
-            resultJson.put("subtaskId", subtaskId);
-            resultJson.put("workerId", workerId);
-            resultJson.put("result", new String(resultData, StandardCharsets.UTF_8)); // или Base64.encode(resultData)
-
-            // Настраиваем заголовки
             HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
 
-            // Создаём HTTP-запрос
-            HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(resultJson, headers);
+            HttpEntity<byte[]> requestEntity = new HttpEntity<>(result, headers);
 
-            // Отправляем запрос
             ResponseEntity<String> response = restTemplate.exchange(
-                    managerAddress + "/distributor/result",
+                    managerAddress + "/distributor/result/" + subtaskId,
                     HttpMethod.POST,
                     requestEntity,
                     String.class
             );
-
             System.out.println("Результат для подзадачи №" + subtaskId + " отправлен на распределитель");
         } catch (Exception e) {
             System.err.println("Ошибка при отправке результата: " + e.getMessage());
-            e.printStackTrace();
         }
     }
 
@@ -206,7 +191,7 @@ public class Worker {
 
         for (int i = 0; i < paramTypes.length; i++) {
             for (Annotation annotation : paramAnnotations[i]) {
-                if (annotation instanceof Param) {
+                if (annotation.annotationType().equals(Param.class)) {
                     String paramName = ((Param) annotation).value();
                     Object paramValue = getParamValue(subTaskObj, paramName);
                     parameters[i] = paramValue;
@@ -259,32 +244,24 @@ public class Worker {
     }
 
     private Object invokeMainMethod(Method method, Object[] parameters) throws Exception {
-        final Object[] resultHolder = new Object[1];
-
-        Thread invokeThread = new Thread(() -> {
-            try {
-                Object instance = method.getDeclaringClass().newInstance();
-                System.out.println("Вызов метода " + method.getName() + " с параметрами:");
-                for (int i = 0; i < parameters.length; i++) {
-                    System.out.println("  Параметр " + i + ": " + parameters[i]);
-                }
-
-                Object result = method.invoke(instance, parameters);
-                resultHolder[0] = result;
-
-                if (result == null) {
-                    System.err.println("Предупреждение: метод вернул null");
-                    resultHolder[0] = new ArrayList<>();
-                }
-            } catch (Exception e) {
-                System.err.println("Ошибка при вызове метода: " + e.getMessage());
+        try {
+            Object instance = method.getDeclaringClass().newInstance();
+            System.out.println("Вызов метода " + method.getName() + " с параметрами:");
+            for (int i = 0; i < parameters.length; i++) {
+                System.out.println("  Параметр " + i + ": " + parameters[i]);
             }
-        });
 
-        invokeThread.start();
-        invokeThread.join();
+            Object result = method.invoke(instance, parameters);
 
-        return resultHolder[0];
+            if (result == null) {
+                System.err.println("Предупреждение: метод вернул null");
+                return new ArrayList<>();
+            }
+            return result;
+        } catch (Exception e) {
+            System.err.println("Ошибка при вызове метода: " + e.getMessage());
+            throw e;
+        }
     }
 
     private byte[] serializeResult(Object result) throws Exception {
