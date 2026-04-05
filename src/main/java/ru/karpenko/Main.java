@@ -2,28 +2,24 @@ package ru.karpenko;
 
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
+import io.grpc.Server;
+import io.grpc.ServerBuilder;
 import io.grpc.stub.StreamObserver;
 
 import java.util.Arrays;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 public class Main {
     public static void main(String[] args) throws Exception {
-        // Подключаемся к формирователю на порту 8081
         ManagedChannel channel = ManagedChannelBuilder
                 .forAddress("localhost", 8081)
                 .usePlaintext()
                 .build();
 
-        GridServiceGrpc.GridServiceBlockingStub stub = GridServiceGrpc.newBlockingStub(channel);
+        GridServiceGrpc.GridServiceStub stub = GridServiceGrpc.newStub(channel);
 
-        /*int[][] adjacencyMatrix = {
-                {0, 10, 15, 20},
-                {10, 0, 35, 25},
-                {15, 35, 0, 30},
-                {20, 25, 30, 0}
-        };*/
         int[][] adjacencyMatrix = {
                 {0, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75},
                 {10, 0, 35, 25, 30, 20, 45, 50, 55, 60, 65, 70, 75, 80, 85},
@@ -44,7 +40,7 @@ public class Main {
 
         TaskRequest request = TaskRequest.newBuilder()
                 .setMatrixSize(15)
-                .setPathLength(7)
+                .setPathLength(6)
                 .addAllAdjacencyMatrix(
                         Arrays.stream(adjacencyMatrix)
                                 .map(row -> MatrixRow.newBuilder()
@@ -54,27 +50,56 @@ public class Main {
                 )
                 .build();
 
+        CountDownLatch finishLatch = new CountDownLatch(1);
+
+        // Запускаем gRPC сервер на клиенте для получения результата
+        Server server = ServerBuilder.forPort(8085)
+                .addService(new ClientServiceImpl(finishLatch))
+                .build()
+                .start();
+
+        System.out.println("Клиентский сервер запущен на порту 8085");
+
         System.out.println("Отправка задачи формирователю...");
-        try {
-            TaskResponse response = stub.addTask(request);
-            String taskId = response.getTaskId();
-            System.out.println("Задача отправлена. taskId: " + taskId);
+        stub.addTask(request, new StreamObserver<TaskResponse>() {
+            @Override
+            public void onNext(TaskResponse response) {
+                String taskId = response.getTaskId();
+                System.out.println("Задача отправлена. taskId: " + taskId);
+            }
 
-            // Ждем завершения обработки
-            Thread.sleep(5000);
+            @Override
+            public void onError(Throwable t) {
+                System.err.println("Ошибка при отправке задачи: " + t.getMessage());
+                finishLatch.countDown();
+            }
 
-            // Получаем результат
-            ResultRequest resultRequest = ResultRequest.newBuilder()
-                    .setTaskId(taskId)
-                    .build();
+            @Override
+            public void onCompleted() {
+                System.out.println("Задача успешно отправлена");
+            }
+        });
 
-            ResultResponse resultResponse = stub.getResult(resultRequest);
-            System.out.println("Результат получен: " + resultResponse.getResultData().toStringUtf8());
-        } catch (Exception e) {
-            System.err.println("Ошибка при вызове сервера: " + e.getMessage());
-            e.printStackTrace();
-        } finally {
-            channel.shutdown();
+        //Таймаут для клиента чтобы сам закрывался
+        finishLatch.await(30, TimeUnit.SECONDS);
+
+        channel.shutdown();
+        server.shutdown();
+    }
+
+    static class ClientServiceImpl extends ClientServiceGrpc.ClientServiceImplBase {
+        private final CountDownLatch finishLatch;
+
+        ClientServiceImpl(CountDownLatch finishLatch) {
+            this.finishLatch = finishLatch;
+        }
+
+        @Override
+        public void sendResult(ResultResponse request, StreamObserver<com.google.protobuf.Empty> responseObserver) {
+            System.out.println("Результат получен: " + request.getResultData().toStringUtf8());
+            responseObserver.onNext(com.google.protobuf.Empty.getDefaultInstance());
+            responseObserver.onCompleted();
+            finishLatch.countDown();
         }
     }
 }
