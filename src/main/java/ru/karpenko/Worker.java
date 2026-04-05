@@ -35,6 +35,7 @@ public class Worker {
     private static final String JAR_PATH = "solver.jar";
     private static final ObjectMapper objectMapper = new ObjectMapper();
     private static final RestTemplate restTemplate = new RestTemplate();
+    private static String workerId;
 
     public static void main(String[] args) {
         SpringApplication.run(Worker.class, args);
@@ -51,22 +52,26 @@ public class Worker {
                     workerUrl,
                     String.class
             );
+            workerId = response;
             System.out.println("Регистрация воркера: " + response);
         };
     }
 
     @PostMapping("/solveSubtask")
     public byte[] solveSubtask(
-            @RequestParam String taskId,
+            @RequestParam(required = false) String taskId,
+            @RequestParam(required = false) String subtaskId,
             @RequestParam(required = false) MultipartFile jar,
             @RequestParam(required = false) MultipartFile baseData,
             @RequestParam(required = false) MultipartFile subTaskData,
             @RequestParam(required = false, defaultValue = "http://localhost:8083") String managerAddress) {
 
-        System.out.println("\n=== Начало обработки задачи " + taskId + " ===");
+        String currentTaskId = taskId != null ? taskId : subtaskId;
+
+        System.out.println("\n=== Начало обработки задачи " + currentTaskId + " ===");
         System.out.println("managerAddress: " + managerAddress);
 
-        sendTaskAccepted(taskId, managerAddress);
+        sendTaskAccepted(subtaskId, managerAddress);
 
         Path tempDir = null;
 
@@ -115,9 +120,9 @@ public class Worker {
                 byte[] resultBytes = serializeResult(result);
                 System.out.println("Результат сериализован, размер: " + resultBytes.length + " байт");
 
-                sendResult(taskId, resultBytes, managerAddress);
+                sendResult(currentTaskId, subtaskId, workerId, resultBytes, managerAddress);
 
-                System.out.println("=== Задача " + taskId + " выполнена успешно ===\n");
+                System.out.println("=== Задача " + currentTaskId + " выполнена успешно ===\n");
                 return resultBytes;
             } else {
                 System.out.println("JAR файл не получен");
@@ -125,7 +130,7 @@ public class Worker {
             }
         } catch (Exception e) {
             System.err.println("\n=== ОШИБКА В РАБОТЕ ВОРКЕРА ===");
-            System.err.println("Ошибка при обработке задачи " + taskId + ": " + e.getMessage());
+            System.err.println("Ошибка при обработке задачи " + currentTaskId + ": " + e.getMessage());
             e.printStackTrace();
             System.err.println("=============================\n");
             return new byte[0];
@@ -148,35 +153,47 @@ public class Worker {
         }
     }
 
-    private void sendTaskAccepted(String taskId, String managerAddress) {
+    private void sendTaskAccepted(String subTaskId, String managerAddress) {
         try {
             restTemplate.postForObject(
-                    managerAddress + "/distributor/taskAccepted/" + taskId,
+                    managerAddress + "/distributor/taskAccepted/" + subTaskId,
                     null,
                     String.class
             );
-            System.out.println("Подзадача №" + taskId + " воркером принята");
+            System.out.println("Подзадача №" + subTaskId + " воркером принята");
         } catch (Exception e) {
             System.err.println("Ошибка при отправке подтверждения: " + e.getMessage());
         }
     }
 
-    private void sendResult(String taskId, byte[] result, String managerAddress) {
+    private void sendResult(String taskId, String subtaskId, String workerId, byte[] resultData, String managerAddress) {
         try {
+            // Создаём JSON-объект с нужными полями
+            Map<String, Object> resultJson = new HashMap<>();
+            resultJson.put("taskId", taskId);
+            resultJson.put("subtaskId", subtaskId);
+            resultJson.put("workerId", workerId);
+            resultJson.put("result", new String(resultData, StandardCharsets.UTF_8)); // или Base64.encode(resultData)
+
+            // Настраиваем заголовки
             HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
+            headers.setContentType(MediaType.APPLICATION_JSON);
 
-            HttpEntity<byte[]> requestEntity = new HttpEntity<>(result, headers);
+            // Создаём HTTP-запрос
+            HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(resultJson, headers);
 
+            // Отправляем запрос
             ResponseEntity<String> response = restTemplate.exchange(
-                    managerAddress + "/distributor/result/" + taskId,
+                    managerAddress + "/distributor/result",
                     HttpMethod.POST,
                     requestEntity,
                     String.class
             );
-            System.out.println("Результат для подзадачи №" + taskId + " отправлен на распределитель");
+
+            System.out.println("Результат для подзадачи №" + subtaskId + " отправлен на распределитель");
         } catch (Exception e) {
             System.err.println("Ошибка при отправке результата: " + e.getMessage());
+            e.printStackTrace();
         }
     }
 
@@ -265,7 +282,7 @@ public class Worker {
         });
 
         invokeThread.start();
-        invokeThread.join(); // Ожидаем завершения потока
+        invokeThread.join();
 
         return resultHolder[0];
     }
