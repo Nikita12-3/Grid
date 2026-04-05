@@ -1,6 +1,8 @@
 syntax = "proto3";
+
+import "google/protobuf/empty.proto";
+
 option java_multiple_files = true;
-option java_package = "ru.karpenko";
 package ru.karpenko;
 
 message MatrixRow {
@@ -17,38 +19,27 @@ message TaskResponse {
     string taskId = 1;
 }
 
-message SubTaskRequest {
+message DistributorTaskRequest {
     string taskId = 1;
-    bytes subTaskData = 2;
+    string subtaskId = 2;
     bytes jarData = 3;
-}
-
-message SubTaskResponse {
-    bytes resultData = 1;
-}
-
-message ResultRequest {
-    string taskId = 1;
+    bytes baseData = 4;
+    bytes subTaskData = 5;
 }
 
 message ResultResponse {
     bytes resultData = 1;
 }
 
-message DistributorTaskRequest {
-    string taskId = 1;
-    bytes jarData = 2;
-    bytes baseData = 3;
-    bytes subTaskData = 4;
-}
-
 service GridService {
     rpc addTask(TaskRequest) returns (TaskResponse);
-    rpc getNextSubTask(SubTaskRequest) returns (SubTaskResponse);
-    rpc getResult(ResultRequest) returns (ResultResponse);
+    rpc sendResult(stream ResultResponse) returns (google.protobuf.Empty);
 }
 
 service DistributorService {
     rpc addTask(DistributorTaskRequest) returns (TaskResponse);
-    rpc getResult(ResultRequest) returns (ResultResponse);
+}
+
+service ClientService {
+    rpc sendResult(ResultResponse) returns (google.protobuf.Empty);
 }
