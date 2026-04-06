@@ -36,18 +36,4 @@ public class DistributorGrpcService extends DistributorServiceGrpc.DistributorSe
             responseObserver.onError(e);
         }
     }
-
-    @Override
-    public void sendResult(ResultResponse request, StreamObserver<Empty> responseObserver) {
-        try {
-            distributorService.receiveResult(request.getSubtaskId(), request.getResultData().toByteArray());
-            System.out.println("[DISTRIBUTOR] Результат для подзадачи " + request.getSubtaskId() + " получен и сохранён");
-            responseObserver.onNext(Empty.getDefaultInstance());
-            responseObserver.onCompleted();
-        } catch (Exception e) {
-            System.err.println("[DISTRIBUTOR-GRPC] Ошибка при обработке результата: " + e.getMessage());
-            e.printStackTrace();
-            responseObserver.onError(e);
-        }
-    }
 }

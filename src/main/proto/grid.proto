@@ -36,5 +36,8 @@ message ResultResponse {
 
 service DistributorService {
     rpc addTask(DistributorTaskRequest) returns (TaskResponse);
+}
+
+service GridService {
     rpc sendResult(ResultResponse) returns (google.protobuf.Empty);
 }

@@ -1,5 +1,6 @@
 package ru.karpenko;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -28,13 +29,12 @@ public class DistributorRestController {
     @PostMapping(value = "/result/{subtaskId}", consumes = MediaType.APPLICATION_OCTET_STREAM_VALUE)
     public ResponseEntity<String> receiveResult(@PathVariable String subtaskId, @RequestBody byte[] result) {
         try {
-            System.out.println("[DISTRIBUTOR] Результат получен для подзадачи: " + subtaskId);
             distributorService.receiveResult(subtaskId, result);
             return ResponseEntity.ok("Результат для подзадачи №" + subtaskId + " получен и сохранён");
         } catch (Exception e) {
             System.err.println("[DISTRIBUTOR] Ошибка при обработке результата: " + e.getMessage());
             e.printStackTrace();
-            return ResponseEntity.badRequest().body("Ошибка при обработке результата: " + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Ошибка при обработке результата: " + e.getMessage());
         }
     }
 }
