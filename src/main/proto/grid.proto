@@ -28,12 +28,13 @@ message DistributorTaskRequest {
 }
 
 message ResultResponse {
-    bytes resultData = 1;
+    string taskId = 1;
+    bytes resultData = 2;
 }
 
 service GridService {
     rpc addTask(TaskRequest) returns (TaskResponse);
-    rpc sendResult(stream ResultResponse) returns (google.protobuf.Empty);
+    rpc sendResult(ResultResponse) returns (google.protobuf.Empty);
 }
 
 service DistributorService {

@@ -1,6 +1,7 @@
 package ru.karpenko;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.protobuf.Empty;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import io.grpc.Server;
@@ -10,7 +11,9 @@ import com.google.protobuf.ByteString;
 import ru.karpenko.model.Task;
 import ru.karpenko.model.BatchResult;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.ObjectInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
@@ -54,6 +57,58 @@ public class MyGridService extends GridServiceGrpc.GridServiceImplBase {
             e.printStackTrace();
             responseObserver.onError(e);
         }
+    }
+
+    @Override
+    public void sendResult(ResultResponse request, StreamObserver<Empty> responseObserver) {
+        try {
+            String taskId = request.getTaskId();
+            byte[] resultData = request.getResultData().toByteArray();
+
+            // Логируем размер полученных данных
+            System.out.println("[GRID] Получены результаты для задачи " + taskId + ", размер: " + resultData.length);
+
+            if (resultData.length > 0) {
+                // Десериализуем данные
+                ByteArrayInputStream byteStream = new ByteArrayInputStream(resultData);
+                try (ObjectInputStream objectStream = new ObjectInputStream(byteStream)) {
+                    List<byte[]> taskResults = (List<byte[]>) objectStream.readObject();
+                    System.out.println("[GRID] Десериализовано " + taskResults.size() + " результатов");
+                } catch (ClassNotFoundException | IOException e) {
+                    System.err.println("[GRID] Ошибка при десериализации: " + e.getMessage());
+                    responseObserver.onError(e);
+                    return;
+                }
+            } else {
+                System.err.println("[GRID] Получен пустой массив байтов для задачи " + taskId);
+            }
+
+            // Отправляем пустой ответ
+            responseObserver.onNext(Empty.newBuilder().build());
+            responseObserver.onCompleted();
+        } catch (Exception e) {
+            System.err.println("[GRID] Ошибка при обработке результата: " + e.getMessage());
+            responseObserver.onError(e);
+        }
+    }
+
+    private byte[] findCheapestPath(String taskId, List<byte[]> resultDataList) throws IOException {
+        if (resultDataList == null || resultDataList.isEmpty()) {
+            throw new RuntimeException("Нет результатов для задачи " + taskId);
+        }
+
+        BatchResult cheapestPath = resultDataList.stream()
+                .map(data -> {
+                    try {
+                        return deserializeBatchResult(data);
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                })
+                .min(Comparator.comparingInt(BatchResult::getCost))
+                .orElseThrow(() -> new RuntimeException("Не удалось найти самый дешевый путь"));
+
+        return objectMapper.writeValueAsBytes(cheapestPath);
     }
 
     private void sendTasksToDistributor(String taskId, byte[] jarData, byte[] baseData, List<byte[]> subTaskDataList) {
