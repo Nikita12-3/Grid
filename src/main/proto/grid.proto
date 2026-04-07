@@ -29,7 +29,9 @@ message DistributorTaskRequest {
 
 message ResultResponse {
     string taskId = 1;
-    bytes resultData = 2;
+    string subtaskId = 2;
+    string workerId = 3;
+    bytes resultData = 4;
 }
 
 service GridService {
