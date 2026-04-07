@@ -5,6 +5,7 @@ import io.grpc.ManagedChannelBuilder;
 import io.grpc.Server;
 import io.grpc.ServerBuilder;
 import io.grpc.stub.StreamObserver;
+import com.google.protobuf.Empty;
 
 import java.util.Arrays;
 import java.util.concurrent.CountDownLatch;
@@ -13,13 +14,16 @@ import java.util.stream.Collectors;
 
 public class Main {
     public static void main(String[] args) throws Exception {
+        // Создаем канал для связи с формирователем
         ManagedChannel channel = ManagedChannelBuilder
                 .forAddress("localhost", 8081)
                 .usePlaintext()
                 .build();
 
+        // Создаем stub для отправки задачи
         GridServiceGrpc.GridServiceStub stub = GridServiceGrpc.newStub(channel);
 
+        // Матрица смежности
         int[][] adjacencyMatrix = {
                 {0, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75},
                 {10, 0, 35, 25, 30, 20, 45, 50, 55, 60, 65, 70, 75, 80, 85},
@@ -38,6 +42,7 @@ public class Main {
                 {75, 85, 85, 85, 90, 95, 100, 105, 110, 115, 120, 125, 130, 135, 0}
         };
 
+        // Создаем запрос задачи
         TaskRequest request = TaskRequest.newBuilder()
                 .setMatrixSize(15)
                 .setPathLength(6)
@@ -50,6 +55,7 @@ public class Main {
                 )
                 .build();
 
+        // Создаем CountDownLatch для ожидания завершения
         CountDownLatch finishLatch = new CountDownLatch(1);
 
         // Запускаем gRPC сервер на клиенте для получения результата
@@ -60,6 +66,7 @@ public class Main {
 
         System.out.println("Клиентский сервер запущен на порту 8085");
 
+        // Отправляем задачу формирователю
         System.out.println("Отправка задачи формирователю...");
         stub.addTask(request, new StreamObserver<TaskResponse>() {
             @Override
@@ -80,9 +87,11 @@ public class Main {
             }
         });
 
-        //Таймаут для клиента чтобы сам закрывался
-        finishLatch.await(30, TimeUnit.SECONDS);
+        // Ожидаем завершения
+        finishLatch.await(20, TimeUnit.SECONDS);
 
+        System.out.println("Завершаем");
+        // Завершаем канал и сервер
         channel.shutdown();
         server.shutdown();
     }
@@ -95,11 +104,23 @@ public class Main {
         }
 
         @Override
-        public void sendResult(ResultResponse request, StreamObserver<com.google.protobuf.Empty> responseObserver) {
-            System.out.println("Результат получен: " + request.getResultData().toStringUtf8());
-            responseObserver.onNext(com.google.protobuf.Empty.getDefaultInstance());
-            responseObserver.onCompleted();
-            finishLatch.countDown();
+        public void sendResult(ResultResponse request, StreamObserver<Empty> responseObserver) {
+            try {
+                String taskId = request.getTaskId();
+                byte[] resultData = request.getResultData().toByteArray();
+
+                System.out.println("Результат получен для задачи " + taskId + ", размер: " + resultData.length);
+
+                // Десериализация результата
+                String resultString = new String(resultData, java.nio.charset.StandardCharsets.UTF_8);
+                System.out.println("Результат: " + resultString);
+
+                responseObserver.onNext(Empty.getDefaultInstance());
+                responseObserver.onCompleted();
+            } catch (Exception e) {
+                System.err.println("Ошибка при обработке результата: " + e.getMessage());
+                responseObserver.onError(e);
+            }
         }
     }
 }

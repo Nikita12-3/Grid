@@ -18,7 +18,10 @@ message TaskResponse {
 }
 
 message ResultResponse {
-    bytes resultData = 1;
+    string taskId = 1;
+    string subtaskId = 2;
+    string workerId = 3;
+    bytes resultData = 4;
 }
 
 service GridService {
