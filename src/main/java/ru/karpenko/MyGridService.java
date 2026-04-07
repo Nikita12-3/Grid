@@ -14,6 +14,8 @@ import ru.karpenko.model.BatchResult;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.ObjectInputStream;
+import java.net.InetSocketAddress;
+import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
@@ -73,8 +75,24 @@ public class MyGridService extends GridServiceGrpc.GridServiceImplBase {
                     List<byte[]> taskResults = (List<byte[]>) objectStream.readObject();
                     System.out.println("[GRID] Десериализовано " + taskResults.size() + " результатов");
 
-                    byte[] cheapestPathData = findCheapestPath(taskId, taskResults);
-                    sendResultToClient(taskId, cheapestPathData);
+                    // Сохраняем результаты для задачи
+                    results.computeIfAbsent(taskId, k -> new ArrayList<>()).addAll(taskResults);
+
+                    // Уменьшаем счетчик CountDownLatch
+                    if (latches.containsKey(taskId)) {
+                        latches.get(taskId).countDown();
+                        System.out.println("[GRID] Осталось подзадач для задачи " + taskId + ": " + latches.get(taskId).getCount());
+                    }
+
+                    // Проверяем, все ли результаты получены
+                    if (latches.containsKey(taskId) && latches.get(taskId).getCount() == 0) {
+                        byte[] cheapestPathData = findCheapestPath(taskId);
+                        if (isClientAvailable()) {
+                            sendResultToClient(taskId, cheapestPathData);
+                        } else {
+                            System.err.println("[GRID] Клиентский сервер недоступен на порту 8085");
+                        }
+                    }
                 } catch (ClassNotFoundException | IOException e) {
                     System.err.println("[GRID] Ошибка при десериализации: " + e.getMessage());
                     responseObserver.onError(e);
@@ -92,7 +110,8 @@ public class MyGridService extends GridServiceGrpc.GridServiceImplBase {
         }
     }
 
-    private byte[] findCheapestPath(String taskId, List<byte[]> resultDataList) throws IOException {
+    private byte[] findCheapestPath(String taskId) throws IOException {
+        List<byte[]> resultDataList = results.get(taskId);
         if (resultDataList == null || resultDataList.isEmpty()) {
             throw new RuntimeException("Нет результатов для задачи " + taskId);
         }
@@ -141,40 +160,64 @@ public class MyGridService extends GridServiceGrpc.GridServiceImplBase {
             e.printStackTrace();
         }
     }
+    private boolean isClientAvailable() {
+        try (Socket socket = new Socket()) {
+            socket.connect(new InetSocketAddress("localhost", 8085), 1000);
+            return true;
+        } catch (IOException e) {
+            return false;
+        }
+    }
 
 
     private void sendResultToClient(String taskId, byte[] resultData) {
-        try {
-            ManagedChannel channel = ManagedChannelBuilder
-                    .forAddress("localhost", 8085)
-                    .usePlaintext()
-                    .build();
+        int maxAttempts = 3;
+        int attempt = 0;
+        while (attempt < maxAttempts) {
+            try {
+                System.out.println("[GRID] Отправка результата для задачи " + taskId + " клиенту, попытка " + (attempt + 1));
+                ManagedChannel channel = ManagedChannelBuilder
+                        .forTarget("localhost:8085")
+                        .usePlaintext()
+                        .build();
 
-            ClientServiceGrpc.ClientServiceStub clientStub = ClientServiceGrpc.newStub(channel);
+                ClientServiceGrpc.ClientServiceStub clientStub = ClientServiceGrpc.newStub(channel);
 
-            clientStub.sendResult(ResultResponse.newBuilder()
-                            .setResultData(ByteString.copyFrom(resultData))
-                            .build(),
-                    new StreamObserver<com.google.protobuf.Empty>() {
-                        @Override
-                        public void onNext(com.google.protobuf.Empty empty) {
-                            System.out.println("Результат успешно отправлен клиенту");
-                        }
+                StreamObserver<Empty> responseObserver = new StreamObserver<Empty>() {
+                    @Override
+                    public void onNext(Empty empty) {
+                        System.out.println("[GRID] Результат успешно отправлен клиенту");
+                    }
 
-                        @Override
-                        public void onError(Throwable t) {
-                            System.err.println("Ошибка при отправке результата клиенту: " + t.getMessage());
-                        }
+                    @Override
+                    public void onError(Throwable t) {
+                        System.err.println("[GRID] Ошибка при отправке результата клиенту: " + t.getMessage());
+                    }
 
-                        @Override
-                        public void onCompleted() {
-                            System.out.println("Отправка результата клиенту завершена");
-                            channel.shutdown();
-                        }
-                    });
-        } catch (Exception e) {
-            System.err.println("Ошибка при отправке результата клиенту: " + e.getMessage());
-            e.printStackTrace();
+                    @Override
+                    public void onCompleted() {
+                        System.out.println("[GRID] Отправка результата клиенту завершена");
+                        channel.shutdown();
+                    }
+                };
+
+                clientStub.sendResult(ResultResponse.newBuilder()
+                        .setTaskId(taskId)
+                        .setResultData(ByteString.copyFrom(resultData))
+                        .build(), responseObserver);
+
+                return; // Успешная отправка, выходим из цикла
+            } catch (Exception e) {
+                System.err.println("[GRID] Ошибка при отправке результата клиенту: " + e.getMessage());
+                attempt++;
+                if (attempt < maxAttempts) {
+                    try {
+                        Thread.sleep(1000); // Пауза перед повторной попыткой
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
+            }
         }
     }
 
